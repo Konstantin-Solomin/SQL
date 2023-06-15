@@ -1,0 +1,170 @@
+'''Задача:
+Добавьте в таблицу 'client' поле 'source_id' тип данных: INT, возможность использования неопределенного значения: Да. Для данного поля определите ограничение внешнего ключа как ссылку на поле 'id' таблицы 'source'.
+
+Решение:'''
+ALTER TABLE client
+    ADD COLUMN source_id INT NULL,
+    ADD CONSTRAINT fk_source_id FOREIGN KEY (source_id) REFERENCES source(id);
+-----------------------------------------------------------------------------------------------------------------------
+'''Задача:
+Удалите из таблицы 'client' поля 'code' и 'source_id'.
+
+Решение:'''
+ALTER TABLE client
+    DROP COLUMN code,
+    DROP FOREIGN KEY fk_client_source1,
+    DROP COLUMN source_id;
+-----------------------------------------------------------------------------------------------------------------------
+'''Задача:
+Добавить таблицу 'best_offer_sale' со следующими полями:
+Название: `id`, тип данных: INT, возможность использования неопределенного значения: Нет, первичный ключ
+Название: `name`, тип данных: VARCHAR(255), возможность использования неопределенного значения: Да
+Название: `dt_start`, тип данных: DATETIME, возможность использования неопределенного значения: Нет
+Название: `dt_finish`, тип данных: DATETIME, возможность использования неопределенного значения: Нет
+
+Решение:'''
+CREATE TABLE IF NOT EXISTS best_offer_sale(
+    id INT NOT NULL,
+    name VARCHAR(255) NULL,
+    dt_start DATETIME NOT NULL,
+    dt_finish DATETIME NOT NULL,
+    PRIMARY KEY(id))
+ENGINE = InnoDB
+DEFAULT CHARACTER SET = utf8
+COLLATE = utf8_general_ci;
+-----------------------------------------------------------------------------------------------------------------------
+'''Задача:
+Выведите список источников, из которых не было клиентов, либо клиенты пришедшие из которых не совершали заказов или отказывались от заказов. Под клиентами, которые отказывались от заказов, необходимо понимать клиентов, у которых есть заказы, которые на момент выполнения запроса находятся в состоянии 'rejected'. В запросе необходимо использовать оператор UNION для объединения выборок по разным условиям.
+Ожидаемый формат результата:
++-------------+
+| source_name |
++-------------+
+| source 1    |
+| source 2    |
+| source 3    |
+......
+
+Решение:'''
+select source.name as source_name from source
+    where not exists
+        (select * from client
+             where client.source_id = source.id)
+union
+select source.name as source_name from source
+    inner join client as c
+    on source.id = c.source_id
+    where not exists
+        (select * from sale
+             where sale.client_id = c.id)
+union
+select source.name as source_name from source
+    inner join client as c
+    on source.id = c.source_id
+    inner join sale as s
+    on c.id = s.client_id
+    inner join status as st
+    on st.id = s.status_id
+    where st.name = 'rejected'
+-----------------------------------------------------------------------------------------------------------------------
+'''Задача:
+Выведите список всех категорий продуктов и количество продаж товаров, относящихся к данной категории. Под количеством продаж товаров подразумевается суммарное количество единиц товара данной категории, фигурирующих в заказах с любым статусом.
+Ожидаемый формат результата:
++---------------------+----------+
+| name                | sale_num |
++---------------------+----------+
+| category 1          |       11 |
+| category 2          |       25 |
+| category 3          |       13 |
+...
+
+Решение:'''
+SELECT category.name, count(sale.id) as sale_num FROM category
+left outer join category_has_good on category_has_good.category_id = category.id
+left outer join good on good.id = category_has_good.good_id
+left outer join sale_has_good on good.id = sale_has_good.good_id
+left outer join sale on sale_has_good.sale_id = sale.id
+group by category.name
+order by sale_num desc;
+-----------------------------------------------------------------------------------------------------------------------
+'''Задача:
+Выведите названия товаров, которые относятся к категории 'Cakes' или фигурируют в заказах текущий статус которых 'delivering'. Результат не должен содержать одинаковых записей. В запросе необходимо использовать оператор UNION для объединения выборок по разным условиям.
+Ожидаемый формат результата:
++-------------+
+| good_name   |
++-------------+
+| good 1      |
+| good 2      |
+| good 3      |
+...
+
+Решение:'''
+select good.name as good_name from good
+	inner join category_has_good on good.id = category_has_good.good_id
+    inner join category on category_has_good.category_id = category.id
+    where category.name = 'Cakes'
+union
+select good.name as good_name from good
+	inner join sale_has_good on good.id = sale_has_good.good_id
+	inner join sale on sale_has_good.sale_id = sale.id
+    inner join status on sale.status_id = status.id
+    where status.name = 'delivering'
+-----------------------------------------------------------------------------------------------------------------------
+'''Задача:
+Выведите список всех источников клиентов и суммарный объем заказов по каждому источнику. Результат должен включать также записи для источников, по которым не было заказов.
+Ожидаемый формат результата:
++-------------+----------------+
+| source_name | sale_sum       |
++-------------+----------------+
+| source 1    | 111.00         |
+| source 2    | 222.00         |
+| source 3    | 333.00         |
+...
+
+Решение:'''
+select source.name as source_name, sum(sale.sale_sum) as sale_sum from client
+	inner join sale on client.id = sale.client_id
+	right outer join source on client.source_id = source.id
+    group by source_name
+    order by sale_sum desc;
+-----------------------------------------------------------------------------------------------------------------------
+'''Задача:
+Выведите в качестве результата одного запроса общее количество заказов, сумму стоимостей (бюджетов) всех проектов, средний срок исполнения заказа в днях.
+
+Решение:'''
+select count(1),
+	sum(budget),
+    avg(datediff(project_finish, project_start))
+from project
+-----------------------------------------------------------------------------------------------------------------------
+'''Задача:
+Удалите из таблицы записи, где адрес плательщика или адрес получателя установлен в неопределенное значение или пустую строку.
+
+Решение:'''
+DELETE FROM billing
+WHERE payer_email IS NULL OR payer_email= '' OR recipient_email IS NULL OR recipient_email= '';
+-----------------------------------------------------------------------------------------------------------------------
+'''Задача:
+Измените адрес плательщика на 'igor@mail.com' для всех записей таблицы, где адрес плательщика 'alex@mail.com'.
+
+Решение:'''
+UPDATE billing
+    set payer_email= 'igor@mail.com'
+WHERE payer_email= 'alex@mail.com'
+-----------------------------------------------------------------------------------------------------------------------
+'''Задача:
+Добавьте в таблицу одну запись о платеже со следующими значениями:
+email плательщика: 'pasha@mail.com'
+email получателя: 'katya@mail.com'
+сумма: 300.00
+валюта: 'EUR'
+дата операции: 14.02.2016
+комментарий: 'Valentines day present)'
+
+Решение:'''
+INSERT INTO billing VALUES (
+    'pasha@mail.com',
+    'katya@mail.com',
+    '300.00',
+    'EUR',
+    '2016-02-14',
+    'Valentines day present)');
