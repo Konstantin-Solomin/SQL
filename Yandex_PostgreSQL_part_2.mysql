@@ -1,0 +1,365 @@
+'''Задача:
+Напишите запрос, который выведет сумму выручки по годам и разницу выручки между текущим и следующим годом. Разница должна показывать, на сколько выручка следующего года отличается от текущего. В случае, если данных по следующему году нет, укажите ноль.
+Выгрузите поля:
+год, приведённый к типу date;
+выручка за текущий год;
+разница в выручке между текущим и следующим годом.
+
+Решение:'''
+WITH
+a AS (SELECT DISTINCT DATE_TRUNC('year', paid_at)::date AS years,
+      SUM(total_amt) OVER (PARTITION BY DATE_TRUNC('year', paid_at)::date) AS total
+      FROM tools_shop.orders)
+
+SELECT *,
+        LEAD(total,1,total) OVER (ORDER BY years) - total::numeric AS next
+FROM a
+-----------------------------------------------------------------------------------------------------------------------
+'''Задача:
+Напишите запрос, который выведет сумму трат на привлечение пользователей по месяцам, а также разницу в тратах между текущим и предыдущим месяцами. Разница должна показывать, на сколько траты текущего месяца отличаются от предыдущего. В случае, если данных по предыдущему месяцу нет, укажите ноль.
+Выгрузите поля:
+месяц, приведённый к типу date;
+траты на привлечение пользователей в текущем месяце;
+разница в тратах между текущим и предыдущим месяцами.
+
+Решение:'''
+WITH
+a AS (SELECT DISTINCT DATE_TRUNC('month', created_at)::date AS months,
+       SUM(costs) OVER (PARTITION BY DATE_TRUNC('month', created_at)::date) AS amt
+FROM tools_shop.costs)
+
+SELECT DISTINCT *,
+        amt::numeric - LAG(amt,1,amt) OVER (ORDER BY months) AS p
+FROM a
+ORDER BY months
+-----------------------------------------------------------------------------------------------------------------------
+'''Задача:
+Используя конструкцию WINDOW, рассчитайте суммарную стоимость и количество заказов с накоплением от месяца к месяцу.
+Выгрузите поля:
+идентификатор заказа;
+месяц оформления заказа, приведённый к типу date;
+сумма заказа;
+количество заказов с накоплением;
+суммарная стоимость заказов с накоплением.
+
+Решение:'''
+SELECT order_id,
+       DATE_TRUNC('month', created_at)::date,
+       total_amt,
+       COUNT(order_id) OVER c,
+       SUM(total_amt) OVER c
+FROM tools_shop.orders
+WINDOW c AS (ORDER BY DATE_TRUNC('month', created_at)::date)
+-----------------------------------------------------------------------------------------------------------------------
+'''Задача:
+Посчитайте события с названием view_item по месяцам с накоплением. Рассчитайте количество событий только для тех пользователей, которые совершили хотя бы одну покупку.
+Выгрузите поля: 
+месяц события, приведённый к типу date;
+количество событий за текущий месяц;
+количество событий за текущий месяц с накоплением.
+
+Решение:'''
+WITH
+e AS (SELECT event_time,
+             event_id,
+             user_id,
+             event_name
+     FROM tools_shop.events)
+
+SELECT DISTINCT DATE_TRUNC('month', event_time)::date,
+        COUNT(event_id) OVER (PARTITION BY DATE_TRUNC('month', event_time)::date),
+        COUNT(event_id) OVER (ORDER BY DATE_TRUNC('month', event_time)::date) AS count_cum
+FROM e
+WHERE event_name = 'view_item'
+AND user_id IN (SELECT user_id
+                FROM tools_shop.orders
+                WHERE paid_at IS NOT NULL)
+ORDER BY DATE_TRUNC('month', event_time)::date
+-----------------------------------------------------------------------------------------------------------------------
+'''Задача:
+Используя оконную функцию, выведите количество заказов, в которых было четыре товара и более.
+
+Решение:'''
+WITH
+a AS (SELECT ROW_NUMBER() OVER (PARTITION BY order_id ORDER BY item_id) AS q,
+              order_id
+     FROM tools_shop.order_x_item)
+SELECT COUNT(order_id)
+FROM a
+WHERE q > 3
+-----------------------------------------------------------------------------------------------------------------------
+'''Задача:
+Напишите запрос, который проранжирует расходы на привлечение пользователей за каждый день по убыванию. 
+Выгрузите три поля: 
+дата, которую нужно привести к типу date;
+расходы на привлечение;
+ранг строки.
+
+Решение:'''
+SELECT created_at::date,
+        costs,
+        ROW_NUMBER() OVER (ORDER BY costs DESC)
+FROM tools_shop.costs
+-----------------------------------------------------------------------------------------------------------------------
+'''Задача:
+Измените предыдущий запрос: записям с одинаковыми значениями расходов назначьте одинаковый ранг. Ранги не должны прерываться.
+
+Решение:'''
+SELECT created_at::date,
+        costs,
+        DENSE_RANK() OVER (ORDER BY costs DESC)
+FROM tools_shop.costs
+-----------------------------------------------------------------------------------------------------------------------
+'''Задача:
+Из таблицы tools_shop.orders выведите поля order_id, user_id, paid_at и к ним добавьте поле paid_at с датой предыдущего заказа для каждого пользователя. Если предыдущего заказа нет, выведите дату 1 января 1980 года.
+
+Решение:'''
+SELECT order_id,
+        user_id,
+        paid_at,
+        LAG(paid_at,1,'1980-01-01' ) OVER (PARTITION BY user_id ORDER BY paid_at)
+FROM tools_shop.orders
+-----------------------------------------------------------------------------------------------------------------------
+'''Задача:
+
+Выведите поля event_id, event_time, user_id из таблицы tools_shop.events и к ним добавьте поле с интервалом между текущим и следующим событием для каждого пользователя. Значение интервала должно быть положительным. Если события нет, оставьте значение NULL.
+
+Решение:'''
+SELECT event_id,
+        event_time,
+        user_id,
+        LEAD(event_time) OVER (PARTITION BY user_id ORDER BY event_time) - event_time
+FROM tools_shop.events
+-----------------------------------------------------------------------------------------------------------------------
+'''Задача:
+Напишите запрос к таблице tools_shop.orders, который выведет:
+месяц заказа в формате '2016-02-01', приведённый к типу date;
+сумму заказа total_amt;
+сумму заказа с накоплением, отсортированную по возрастанию месяца оформления заказа (здесь дата — дата и время, усечённые до месяца).
+
+Решение:'''
+SELECT CAST(DATE_TRUNC('month', created_at) AS date),
+        total_amt,
+        SUM(total_amt) OVER (ORDER BY DATE_TRUNC('month', CAST(created_at AS date)))
+FROM tools_shop.orders
+-----------------------------------------------------------------------------------------------------------------------
+'''Задача:
+Разбейте пользователей в таблице tools_shop.users на пять групп так, чтобы в первую группу попали пользователи, которые недавно зарегистрировались. 
+Выгрузите поля: 
+идентификатор пользователя;
+дата регистрации;
+ранг группы.
+
+Решение:'''
+SELECT user_id,
+       created_at,
+       NTILE(5) OVER (ORDER BY created_at DESC)
+FROM tools_shop.users
+-----------------------------------------------------------------------------------------------------------------------
+'''Задача:
+Проанализируйте данные из таблицы invoice за 2012 и 2013 годы. В итоговую таблицу должны войти поля:
+month — номер месяца;
+sum_total_2012 — выручка за этот месяц в 2012 году;
+sum_total_2013 — выручка за этот месяц в 2013 году;
+perc — процент, который отображает, насколько изменилась месячная выручка в 2013 году по сравнению с 2012 годом.
+Округлите значение в поле perc до ближайшего целого числа. Отсортируйте таблицу по значению в поле month от меньшего к большему.
+
+Решение:'''
+WITH
+y2 AS (SELECT SUM(total) AS sum_total_2012,
+              EXTRACT(MONTH FROM CAST(invoice_date AS date)) AS month,
+              EXTRACT(YEAR FROM CAST(invoice_date AS date)) AS year
+      FROM invoice
+      WHERE EXTRACT(YEAR FROM CAST(invoice_date AS date)) = 2012
+      GROUP BY year, month),
+y3 AS (SELECT SUM(total) AS sum_total_2013,
+              EXTRACT(MONTH FROM CAST(invoice_date AS date)) AS month,
+              EXTRACT(YEAR FROM CAST(invoice_date AS date)) AS year
+      FROM invoice
+      WHERE EXTRACT(YEAR FROM CAST(invoice_date AS date)) = 2013
+      GROUP BY year, month)
+
+SELECT y2.month,
+       sum_total_2012,
+       sum_total_2013,
+       ROUND((sum_total_2013-sum_total_2012)/sum_total_2012*100) AS perc
+FROM y2
+JOIN y3 ON y2.month = y3.month
+ORDER BY y2.month
+-----------------------------------------------------------------------------------------------------------------------
+'''Задача:
+Определите, летом какого года общая выручка в магазине была максимальной. Затем проанализируйте данные за этот год по странам. Выгрузите таблицу с полями:
+country — название страны;
+total_invoice — число заказов, оформленных в этой стране в тот год, когда общая выручка за лето была максимальной;
+total_customer — число клиентов, зарегистрированных в этой стране.
+Отсортируйте таблицу по убыванию значений в поле total_invoice, а затем добавьте сортировку по названию страны в лексикографическом порядке.
+
+Решение:'''
+SELECT i.country AS country,
+       total_invoice,
+       total_customer
+FROM (SELECT billing_country AS country,
+             COUNT(invoice_id) AS total_invoice
+       FROM invoice
+       WHERE
+       EXTRACT(YEAR FROM CAST(invoice_date AS date)) =
+              (SELECT EXTRACT(YEAR FROM CAST(invoice_date AS date)) AS Y
+              FROM invoice
+              WHERE EXTRACT(MONTH FROM CAST(invoice_date AS date)) IN (6,7,8)
+              GROUP BY Y
+              ORDER BY SUM(total) DESC
+              LIMIT 1)
+     GROUP BY country) AS i
+JOIN (SELECT country,
+             COUNT(customer_id) AS total_customer
+       FROM client
+       GROUP BY country)
+       AS c ON c.country = i.country
+ORDER BY total_invoice DESC, country
+-----------------------------------------------------------------------------------------------------------------------
+'''Задача:
+Сформируйте статистику по категориям фильмов. Отобразите в итоговой таблице два поля:
+название категории;
+число фильмов из этой категории.
+Фильмы для второго поля нужно отобрать по условию. Посчитайте фильмы только с теми актёрами и актрисами, которые больше семи раз снимались в фильмах, вышедших после 2013 года. 
+Назовите поля name_category и total_films соответственно. Отсортируйте таблицу по количеству фильмов от большего к меньшему, а затем по полю с названием категории в лексикографическом порядке.
+
+Решение:'''
+SELECT c.name AS name_category,
+       COUNT(f.film_id) AS total_films
+FROM category AS c
+INNER JOIN film_category AS f ON c.category_id = f.category_id
+WHERE f.film_id IN (SELECT film_id
+        FROM film_actor
+        WHERE actor_id IN (SELECT actor_id
+                FROM film_actor
+                WHERE film_id IN (SELECT film_id
+                FROM movie
+                WHERE release_year > 2013)
+                GROUP BY actor_id
+                HAVING COUNT(film_id) > 7))
+GROUP BY name_category
+ORDER BY total_films DESC, name_category
+-----------------------------------------------------------------------------------------------------------------------
+'''Задача:
+Отберите фамилии пользователей, которые:
+оформили хотя бы один заказ в январе 2013 года,
+а также сделали хотя бы один заказ в остальные месяцы того же года.
+Пользователей, которые оформили заказы только в январе, а в остальное время ничего не заказывали, в таблицу включать не нужно.
+
+Решение:'''
+SELECT DISTINCT y.last_name
+FROM (SELECT c.customer_id,
+             c.last_name
+     FROM client AS c
+     JOIN invoice AS i ON c.customer_id = i.customer_id
+     WHERE DATE_TRUNC('month', CAST(i.invoice_date AS date)) BETWEEN '2013-02-01' AND '2013-12-31')
+     AS y
+INNER JOIN (SELECT c.customer_id,
+                   c.last_name
+     FROM client AS c
+     JOIN invoice AS i ON c.customer_id = i.customer_id
+     WHERE EXTRACT(MONTH FROM CAST(i.invoice_date AS date)) = 01
+     AND EXTRACT(YEAR FROM CAST(i.invoice_date AS date)) = 2013)
+     AS j ON y.customer_id = j.customer_id
+-----------------------------------------------------------------------------------------------------------------------
+'''Задача:
+Составьте сводную таблицу. Посчитайте заказы, оформленные за каждый месяц в течение нескольких лет: с 2011 по 2013 год. Итоговая таблица должна включать четыре поля: invoice_month, year_2011, year_2012, year_2013. Поле invoice_month должно хранить месяц в виде числа от 1 до 12. 
+Если в какой-либо месяц заказы не оформляли, номер такого месяца всё равно должен попасть в таблицу.
+
+
+Решение:'''
+SELECT
+    EXTRACT(MONTH FROM CAST(i.invoice_date AS date)) AS invoice_month,
+    COUNT(i11.year_2011) AS year_2011,
+    COUNT(i12.year_2012) AS year_2012,
+    COUNT(i13.year_2013) AS year_2013
+FROM invoice AS i
+LEFT JOIN (SELECT invoice_id,
+                  total AS year_2011
+          FROM invoice
+          WHERE EXTRACT(YEAR FROM CAST(invoice_date AS date)) = 2011
+          ) AS i11
+          ON i.invoice_id = i11.invoice_id
+LEFT JOIN (SELECT invoice_id,
+                  total AS year_2012
+          FROM invoice
+          WHERE EXTRACT(YEAR FROM CAST(invoice_date AS date)) = 2012
+          ) AS i12
+          ON i.invoice_id = i12.invoice_id
+LEFT JOIN (SELECT invoice_id,
+                  total AS year_2013
+          FROM invoice
+          WHERE EXTRACT(YEAR FROM CAST(invoice_date AS date)) = 2013
+          ) AS i13
+          ON i.invoice_id = i13.invoice_id
+GROUP BY invoice_month
+ORDER BY invoice_month
+-----------------------------------------------------------------------------------------------------------------------
+'''Задача:
+Выгрузите уникальные названия городов, в которых стоимость заказов превышает среднее значение за 2009 год.
+
+Решение:'''
+SELECT billing_city
+FROM invoice
+--WHERE
+GROUP BY billing_city
+HAVING SUM(total) > (SELECT AVG(total)
+        FROM invoice
+        WHERE EXTRACT(YEAR FROM CAST(invoice_date AS date)) = 2009)
+-----------------------------------------------------------------------------------------------------------------------
+'''Задача:
+Отберите десять самых коротких по продолжительности треков и выгрузите названия их жанров.
+
+Решение:'''
+SELECT name
+FROM genre
+WHERE genre_id IN
+    (SELECT genre_id
+    FROM track
+    ORDER BY milliseconds
+    LIMIT 10);
+-----------------------------------------------------------------------------------------------------------------------
+'''Задача:
+Для каждой страны посчитайте среднюю стоимость заказов в 2009 году по месяцам. Отберите данные за 2, 5, 7 и 10 месяцы и сложите средние значения стоимости заказов. Выведите названия стран, у которых это число превышает 10 долларов.
+
+Решение:'''
+SELECT country
+FROM
+(SELECT billing_country AS country,
+       EXTRACT(MONTH FROM CAST(invoice_date AS date)) AS month,
+       AVG(total) AS average
+FROM invoice
+WHERE EXTRACT(YEAR FROM CAST(invoice_date AS date)) = 2009
+GROUP BY billing_country, month
+ORDER BY billing_country, month) as av
+WHERE month IN (2, 5, 7, 10)
+GROUP BY country
+HAVING SUM(average) > 10
+-----------------------------------------------------------------------------------------------------------------------
+'''Задача:
+Разделите фильмы на категории: 
+'без ограничений' — если у фильма рейтинг G.
+'с ограничениями' — если у фильма любой рейтинг, кроме G.
+Новое поле с категориями назовите new_rating. Сгруппируйте данные по новому полю и посчитайте суммарную цену аренды фильмов для каждой категории.
+
+Решение:'''
+SELECT
+    CASE
+        WHEN rating = 'G' THEN 'без ограничений'
+        WHEN rating <> 'G' THEN 'с ограничениями'
+    END AS new_rating,
+    SUM(rental_rate)
+FROM movie
+GROUP BY new_rating
+-----------------------------------------------------------------------------------------------------------------------
+'''Задача:
+Найдите треки длиннее 250000 миллисекунд, в названии которых есть слово Moon, но автор трека не указан.
+Выгрузите номера альбомов, в которых находятся выбранные треки.
+
+Решение:'''
+SELECT album_id
+FROM track
+WHERE milliseconds >= 250000
+    AND name LIKE '%Moon%'
+    AND composer IS NULL
